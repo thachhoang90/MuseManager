@@ -8,6 +8,7 @@ const { EventEmitter } = require('events');
 const { WebContentsView, session, shell, app } = require('electron');
 const { CHROME_UA, FIREFOX_UA, isGoogleLoginUrl } = require('./useragent');
 
+const PAGE_PRELOAD = path.join(__dirname, '..', 'preload', 'page.js');
 const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5];
 const ALLOWED_PERMISSIONS = new Set([
   'notifications', 'media', 'clipboard-read', 'clipboard-sanitized-write', 'fullscreen',
@@ -44,6 +45,8 @@ class TabManager extends EventEmitter {
     this.configuredSessions = new Set();
     this.googleMode = new Set();
     this.firefoxUa = new Set();
+    this.collapsed = new Set();      // partition của các nhóm tab đang thu gọn
+    this.popupOwner = new Map();     // webContents.id của cửa sổ popup -> tab mở ra nó
     this.tempSeq = 0;
 
     win.on('resize', () => this.layout());
@@ -55,6 +58,14 @@ class TabManager extends EventEmitter {
   get active() { return this.tabs.find((t) => t.id === this.activeId) || null; }
   get(id) { return this.tabs.find((t) => t.id === id) || null; }
   byWebContents(wc) { return this.tabs.find((t) => t.view && t.view.webContents === wc) || null; }
+
+  // Tab sở hữu một webContents (chính tab đó, hoặc tab đã mở cửa sổ popup).
+  ownerTab(wc) {
+    const direct = this.byWebContents(wc);
+    if (direct) return direct;
+    const owner = this.popupOwner.get(wc.id);
+    return owner && this.tabs.includes(owner) ? owner : null;
+  }
 
   changed() {
     this.emit('changed');
@@ -213,6 +224,12 @@ class TabManager extends EventEmitter {
     };
 
     let index = this.tabs.length;
+    if (this.groupingOn() && typeof opts.index !== 'number' && !opts.afterId) {
+      // Gom tab mới vào cuối nhóm của cùng hồ sơ.
+      for (let i = this.tabs.length - 1; i >= 0; i -= 1) {
+        if (this.tabs[i].partition === partition) { index = i + 1; break; }
+      }
+    }
     if (typeof opts.index === 'number') index = Math.max(0, Math.min(opts.index, this.tabs.length));
     else if (opts.afterId) {
       const i = this.tabs.findIndex((t) => t.id === opts.afterId);
@@ -225,6 +242,7 @@ class TabManager extends EventEmitter {
       }
     }
     this.tabs.splice(index, 0, tab);
+    this.normalizeGroups();
 
     if (opts.webContents) this.ensureView(tab, opts.webContents);
     else if (url && !opts.lazy) this.ensureView(tab);
@@ -242,6 +260,7 @@ class TabManager extends EventEmitter {
       : new WebContentsView({
         webPreferences: {
           partition: tab.partition,
+          preload: PAGE_PRELOAD,
           contextIsolation: true,
           nodeIntegration: false,
           sandbox: true,
@@ -392,6 +411,9 @@ class TabManager extends EventEmitter {
     wc.on('did-create-window', (child) => {
       child.setMenuBarVisibility(false);
       const cwc = child.webContents;
+      const cwcId = cwc.id;
+      this.popupOwner.set(cwcId, tab);
+      cwc.once('destroyed', () => this.popupOwner.delete(cwcId));
       this.attachGoogleLoginFix(cwc);
       cwc.on('context-menu', (e, params) => {
         if (this.buildContextMenu) this.buildContextMenu(tab, cwc, params, child);
@@ -451,6 +473,7 @@ class TabManager extends EventEmitter {
     const tab = this.get(id);
     if (!tab) return;
     this.activeId = id;
+    this.collapsed.delete(tab.partition);
     if (!tab.view && !tab.showStart && (tab.pendingUrl || tab.url)) {
       tab.pendingUrl = tab.pendingUrl || tab.url;
       this.ensureView(tab);
@@ -472,6 +495,7 @@ class TabManager extends EventEmitter {
     }
     this.tabs.splice(i, 1);
     for (const t of this.tabs) if (t.openerId === id) t.openerId = null;
+    if (this.tabs.filter((t) => t.partition === tab.partition).length < 2) this.collapsed.delete(tab.partition);
     this.destroyView(tab);
     if (tab.htmlFullscreen) this.win.setFullScreen(false);
     if (this.activeId === id) {
@@ -508,14 +532,93 @@ class TabManager extends EventEmitter {
     const [tab] = this.tabs.splice(i, 1);
     this.tabs.splice(Math.max(0, Math.min(toIndex, this.tabs.length)), 0, tab);
     tab.openerId = null;
+    this.normalizeGroups();
     this.changed();
+  }
+
+  // ---------------------------------------------------------------- nhóm tab
+  groupingOn() { return this.store.settings.groupTabs !== false; }
+
+  // Giữ các tab cùng hồ sơ (cùng partition) nằm liền nhau, theo thứ tự xuất hiện đầu tiên.
+  normalizeGroups() {
+    if (!this.groupingOn()) return;
+    const order = [];
+    const by = new Map();
+    for (const t of this.tabs) {
+      if (!by.has(t.partition)) { by.set(t.partition, []); order.push(t.partition); }
+      by.get(t.partition).push(t);
+    }
+    this.tabs = order.flatMap((p) => by.get(p));
+  }
+
+  moveGroup(partition, toUnitIndex) {
+    const order = [...new Set(this.tabs.map((t) => t.partition))];
+    const from = order.indexOf(partition);
+    if (from < 0) return;
+    order.splice(from, 1);
+    order.splice(Math.max(0, Math.min(toUnitIndex, order.length)), 0, partition);
+    this.tabs = order.flatMap((p) => this.tabs.filter((t) => t.partition === p));
+    this.changed();
+  }
+
+  toggleGroup(partition) {
+    if (this.collapsed.has(partition)) {
+      this.collapsed.delete(partition);
+      this.changed();
+      return;
+    }
+    if (this.tabs.filter((t) => t.partition === partition).length < 2) return;
+    const active = this.active;
+    if (active && active.partition === partition) {
+      // Chuyển sang tab gần nhất ngoài nhóm trước khi thu gọn.
+      const i = this.tabs.indexOf(active);
+      const after = this.tabs.slice(i).find((t) => t.partition !== partition && !this.collapsed.has(t.partition));
+      const before = this.tabs.slice(0, i).reverse().find((t) => t.partition !== partition && !this.collapsed.has(t.partition));
+      const next = after || before;
+      if (!next) return;
+      this.activate(next.id);
+    }
+    this.collapsed.add(partition);
+    this.changed();
+  }
+
+  closeGroup(partition) {
+    for (const t of [...this.tabs]) if (t.partition === partition) this.close(t.id);
+  }
+
+  // Mở link bằng một hồ sơ: dùng lại tab cùng hồ sơ đang ở trang đó (cùng origin và
+  // đường dẫn nằm dưới link, ví dụ link https://muse.ai khớp tab https://muse.ai/chat/1).
+  openInProfile(profileId, url) {
+    const target = normalizeInput(url);
+    if (!target || !this.store.getProfile(profileId)) return null;
+    let want = null;
+    try { want = new URL(target); } catch { /* bỏ qua */ }
+    const base = want ? want.pathname.replace(/\/+$/, '') : '';
+    const existing = want && this.tabs.find((t) => {
+      if (t.profileId !== profileId || t.temp || !t.url) return false;
+      try {
+        const u = new URL(t.url);
+        const p = u.pathname.replace(/\/+$/, '');
+        return u.origin === want.origin && (p === base || p.startsWith(`${base}/`));
+      } catch { return false; }
+    });
+    if (existing) {
+      this.activate(existing.id);
+      return existing;
+    }
+    return this.createTab({ profileId, url: target });
   }
 
   cycle(delta) {
     if (!this.tabs.length) return;
     const i = Math.max(0, this.tabs.findIndex((t) => t.id === this.activeId));
-    const next = this.tabs[(i + delta + this.tabs.length) % this.tabs.length];
-    this.activate(next.id);
+    for (let k = 1; k <= this.tabs.length; k += 1) {
+      const next = this.tabs[(i + delta * k + this.tabs.length * k) % this.tabs.length];
+      if (!this.collapsed.has(next.partition) || k === this.tabs.length) {
+        this.activate(next.id);
+        return;
+      }
+    }
   }
 
   activateIndex(n) {
@@ -647,9 +750,11 @@ class TabManager extends EventEmitter {
   serialize() {
     return {
       activeId: this.activeId,
+      collapsedGroups: [...this.collapsed],
       tabs: this.tabs.map((t) => ({
         id: t.id,
         profileId: t.profileId,
+        partition: t.partition,
         temp: t.temp,
         tempLabel: t.tempLabel,
         title: t.title,

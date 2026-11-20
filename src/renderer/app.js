@@ -29,11 +29,24 @@
     volume: svg('<path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>'),
     muted: svg('<path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="m23 9-6 6"/><path d="m17 9 6 6"/>'),
     open: svg('<path d="M7 17 17 7"/><path d="M7 7h10v10"/>'),
+    dashboard: svg('<circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="5" r="2.5"/><circle cx="19" cy="12" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M7.5 12h9"/><path d="M7.2 10.8C10 7 13 5 16.5 5"/><path d="M7.2 13.2C10 17 13 19 16.5 19"/>'),
+    star: svg('<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9 1.1-6.2L3 9.6l6.2-.9z"/>'),
+    starFill: svg('<path fill="currentColor" d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9 1.1-6.2L3 9.6l6.2-.9z"/>'),
+    key: svg('<circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.3-9.3"/><path d="m16 7 3 3"/><path d="m18 5 2 2"/>'),
+    folder: svg('<path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v9.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/>'),
+    chevrons: svg('<path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/>'),
+    eye: svg('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
+    copy: svg('<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/>'),
     cloudOff: svg('<path d="m2 2 20 20"/><path d="M5.78 5.78A7 7 0 0 0 7 19h9a5 5 0 0 0 2.6-.73"/><path d="M21.6 15.56A5 5 0 0 0 18 10h-1.26A8 8 0 0 0 9.88 4.34"/>'),
   };
   const LOGO = `<svg viewBox="0 0 64 64"><defs><linearGradient id="mmg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7b61ff"/><stop offset="1" stop-color="#2f9bff"/></linearGradient></defs><rect x="2" y="2" width="60" height="60" rx="16" fill="url(#mmg)"/><rect x="11" y="13" width="13" height="10" rx="3" fill="#ff6b6b"/><rect x="25.5" y="13" width="13" height="10" rx="3" fill="#ffd166"/><rect x="40" y="13" width="13" height="10" rx="3" fill="#06d6a0"/><rect x="11" y="20" width="42" height="31" rx="5" fill="#fff"/><rect x="17" y="27" width="30" height="4" rx="2" fill="#c9d3ff"/><rect x="17" y="35" width="22" height="4" rx="2" fill="#e3e8ff"/></svg>`;
 
-  const PALETTE = ['#e8453c', '#f29900', '#f4c20d', '#34a853', '#12b5cb', '#4285f4', '#7b61ff', '#c158dc', '#ff6d9f', '#8d6e63'];
+  // 30 màu nhận diện hồ sơ (trùng với danh sách trong src/main/store.js).
+  const PALETTE = [
+    '#e8453c', '#c62828', '#d81b60', '#ff6d9f', '#ff7043', '#f29900', '#ffb300', '#f4c20d', '#c0ca33', '#7cb342',
+    '#34a853', '#2e7d32', '#00897b', '#26c6da', '#12b5cb', '#0097a7', '#64b5f6', '#4285f4', '#1565c0', '#5c6bc0',
+    '#7b61ff', '#5e35b1', '#c158dc', '#8e24aa', '#ba68c8', '#8d6e63', '#5d4037', '#78909c', '#546e7a', '#3c4043',
+  ];
   const TEMP_COLOR = '#80868b';
 
   // ------------------------------------------------------------------ trạng thái
@@ -43,6 +56,9 @@
   const mru = [];
   const tabEls = new Map();
   const stateListeners = new Set();
+  const renderHooks = [];
+  const initHooks = [];
+  const extraSections = [];
   let addressEditing = false;
   let overlayDepth = 0;
   let drag = null;
@@ -260,16 +276,24 @@
       preview.textContent = initials(name.value || '?');
       setPc(preview, data.color);
     };
+    const pickColor = (c, btn) => {
+      data.color = c;
+      swatches.querySelectorAll('.swatch').forEach((s) => s.classList.toggle('selected', s === btn));
+      refreshPreview();
+    };
     PALETTE.forEach((c) => {
       const b = el('button', { class: `swatch${c === data.color ? ' selected' : ''}`, type: 'button', title: c });
       setPc(b, c);
-      b.addEventListener('click', () => {
-        data.color = c;
-        swatches.querySelectorAll('.swatch').forEach((s) => s.classList.toggle('selected', s === b));
-        refreshPreview();
-      });
+      b.addEventListener('click', () => pickColor(c, b));
       swatches.append(b);
     });
+    // Ô chọn màu tùy ý (ngoài 30 màu gợi ý).
+    const custom = el('label', { class: `swatch custom${PALETTE.includes(data.color) ? '' : ' selected'}`, title: 'Màu khác…' });
+    const customInput = el('input', { type: 'color', value: data.color });
+    custom.append(customInput);
+    setPc(custom, PALETTE.includes(data.color) ? '#ffffff' : data.color);
+    customInput.addEventListener('input', () => { setPc(custom, customInput.value); pickColor(customInput.value, custom); });
+    swatches.append(custom);
     name.addEventListener('input', refreshPreview);
     m.head.prepend(preview);
 
@@ -336,6 +360,7 @@
     const m = await openModal({ title: 'Quản lý', wide: true, onClose: () => stateListeners.delete(listener) });
     const sections = [
       ['profiles', 'Hồ sơ trong ứng dụng'],
+      ...extraSections.map((x) => [x.id, x.label]),
       ['browsers', 'Trình duyệt trên máy'],
       ['settings', 'Cài đặt'],
       ['about', 'Phím tắt & giới thiệu'],
@@ -350,11 +375,18 @@
     let lastSig = '';
     function draw(force = true) {
       seg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.id === current));
+      const extra = extraSections.find((x) => x.id === current);
       if (current === 'profiles') {
         const sig = JSON.stringify([S.profiles, S.tabs.map((t) => t.profileId)]);
         if (!force && sig === lastSig) return;
         lastSig = sig;
         drawProfiles(m.body);
+      } else if (extra) {
+        // Mục do module khác đăng ký: vẽ lại khi dữ liệu liên quan (sig) thay đổi.
+        const sig = extra.sig ? extra.sig() : '';
+        if (!force && (!extra.sig || sig === lastSig)) return;
+        lastSig = sig;
+        extra.draw(m.body, { redraw: () => draw(true), close: () => m.close() });
       } else if (force) {
         lastSig = '';
         if (current === 'browsers') drawBrowsers(m.body);
@@ -458,6 +490,10 @@
       sw('restoreSession', 'Mở lại các tab khi khởi động', 'Lần sau mở ứng dụng sẽ khôi phục các tab đang mở (tab ẩn danh không được khôi phục).'),
       sw('googleLoginFix', 'Chế độ tương thích đăng nhập Google', 'Giả lập trình duyệt Firefox trên trang accounts.google.com để Google không chặn đăng nhập ("trình duyệt này có thể không an toàn"). Tắt nếu gặp lỗi đăng nhập Google.'),
       sw('showSidebar', 'Hiện thanh hồ sơ bên trái', 'Danh sách hồ sơ để chuyển tài khoản nhanh bằng một cú bấm.'),
+      sw('showBookmarks', 'Hiện thanh dấu trang', 'Thanh dấu trang nằm dưới thanh địa chỉ (Ctrl+Shift+B để bật/tắt nhanh).'),
+      sw('groupTabs', 'Gom tab theo hồ sơ', 'Các tab cùng hồ sơ được gom thành một nhóm có tên hồ sơ, bấm tên nhóm để thu gọn/mở rộng.'),
+      sw('offerSavePasswords', 'Đề nghị lưu mật khẩu', 'Hỏi lưu tên đăng nhập và mật khẩu sau khi đăng nhập trên một trang.'),
+      sw('autofillPasswords', 'Tự điền mật khẩu', 'Tự điền khi trang đăng nhập chỉ có một tài khoản đã lưu; nhiều tài khoản thì hiện danh sách để chọn.'),
     );
 
     const defUrl = el('input', { class: 'input', type: 'text', value: s.defaultStartUrl || '', placeholder: 'https://…' });
@@ -505,6 +541,8 @@
       ['Ctrl + F', 'Tìm trong trang'],
       ['Ctrl + + / Ctrl + − / Ctrl + 0', 'Phóng to / Thu nhỏ / Cỡ mặc định'],
       ['Ctrl + P', 'In trang'],
+      ['Ctrl + D', 'Thêm trang hiện tại vào dấu trang'],
+      ['Ctrl + Shift + B', 'Hiện/ẩn thanh dấu trang'],
       ['F11', 'Toàn màn hình'],
       ['F12', 'Công cụ nhà phát triển của trang'],
       ['Bấm hồ sơ ở thanh bên', 'Chuyển tới tab của hồ sơ (mở tab mới nếu chưa có)'],
@@ -517,7 +555,7 @@
       el('div', { class: 'row', style: 'align-items:center;gap:14px;margin:8px 0 14px' }, [
         Object.assign(el('div', { style: 'width:52px;height:52px' }), { innerHTML: LOGO }),
         el('div', {}, [
-          el('b', { style: 'font-size:16px', text: 'Muse Manager' }),
+          el('b', { style: 'font-size:16px', text: 'TabManagerSP' }),
           el('div', { class: 'muted', text: info ? `Phiên bản ${info.version} · Chromium ${info.chrome} · Electron ${info.electron}` : '' }),
         ]),
       ]),
@@ -749,7 +787,7 @@
       node.classList.remove('dragging');
       node.style.transform = '';
       if (!d.moved || cancelled) { renderTabs(); return; }
-      const others = [...$('#tabs').querySelectorAll('.tab')].filter((x) => x !== node);
+      const others = [...$('#tabs').querySelectorAll('.tab')].filter((x) => x !== node && !x.hidden);
       let idx = 0;
       for (const o of others) {
         const r = o.getBoundingClientRect();
@@ -762,10 +800,13 @@
     return node;
   }
 
-  function updateTabEl(node, t) {
+  function updateTabEl(node, t, grouped = false, collapsed = false) {
     const p = profileOf(t);
     const { icon, badge, title, audio } = node.refs;
     setPc(node, p.color);
+    node.classList.toggle('grouped', grouped);
+    badge.hidden = grouped;
+    node.hidden = collapsed;
     node.classList.toggle('active', t.id === S.activeId);
     node.classList.toggle('temp', !!t.temp);
     node.setAttribute('aria-selected', String(t.id === S.activeId));
@@ -793,26 +834,136 @@
     }
   }
 
+  // ------------------------------------------------------------------ nhóm tab
+  const groupEls = new Map();
+
+  function groupLabel(t) {
+    const p = profileOf(t);
+    return p ? p.name : 'Nhóm';
+  }
+
+  function createGroupEl(partition) {
+    const name = el('span', { class: 'tg-name' });
+    const count = el('span', { class: 'tg-count' });
+    const node = el('div', { class: 'tab-group', 'data-partition': partition, role: 'button' }, [name, count]);
+    node.refs = { name, count };
+    let gdrag = null;
+    node.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      openGroupMenu(partition, e.clientX, e.clientY);
+    });
+    node.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      gdrag = { startX: e.clientX, moved: false };
+      node.setPointerCapture(e.pointerId);
+    });
+    node.addEventListener('pointermove', (e) => {
+      if (!gdrag) return;
+      const dx = e.clientX - gdrag.startX;
+      if (!gdrag.moved && Math.abs(dx) < 6) return;
+      gdrag.moved = true;
+      drag = { group: partition };
+      groupMembers(partition, node).forEach((x) => { x.classList.add('dragging'); x.style.transform = `translateX(${dx}px)`; });
+    });
+    const end = (e, cancelled) => {
+      if (!gdrag) return;
+      const d = gdrag;
+      gdrag = null;
+      drag = null;
+      groupMembers(partition, node).forEach((x) => { x.classList.remove('dragging'); x.style.transform = ''; });
+      if (!d.moved) { if (!cancelled) api.tabAction('toggleGroup', null, partition); return; }
+      if (cancelled) { renderTabs(); return; }
+      // Vị trí mới tính theo các "khối" (nhóm hoặc tab lẻ) khác.
+      const units = [...new Set(S.tabs.map((t) => t.partition))].filter((p) => p !== partition);
+      let idx = 0;
+      for (const p of units) {
+        const els = groupMembers(p).filter((x) => !x.hidden);
+        if (!els.length) continue;
+        const left = els[0].getBoundingClientRect().left;
+        const right = els[els.length - 1].getBoundingClientRect().right;
+        if (e.clientX > (left + right) / 2) idx += 1;
+      }
+      api.tabAction('moveGroup', null, { partition, index: idx });
+    };
+    node.addEventListener('pointerup', (e) => end(e, false));
+    node.addEventListener('pointercancel', (e) => end(e, true));
+    return node;
+  }
+
+  function groupMembers(partition, chip = groupEls.get(partition)) {
+    const tabsOf = S.tabs.filter((t) => t.partition === partition).map((t) => tabEls.get(t.id)).filter(Boolean);
+    return chip ? [chip, ...tabsOf] : tabsOf;
+  }
+
+  async function openGroupMenu(partition, x, y) {
+    const list = S.tabs.filter((t) => t.partition === partition);
+    if (!list.length) return;
+    const first = list[0];
+    const p = profileOf(first);
+    const collapsed = (S.collapsedGroups || []).includes(partition);
+    const items = [
+      { label: `Nhóm: ${menuLabel(p.name)}`, enabled: false },
+      { type: 'separator' },
+      { id: 'new', label: 'Tab mới trong nhóm' },
+      { id: 'toggle', label: collapsed ? 'Mở rộng nhóm' : 'Thu gọn nhóm' },
+      { id: 'close', label: `Đóng nhóm (${list.length} tab)` },
+    ];
+    if (!first.temp) items.push({ type: 'separator' }, { id: 'edit', label: 'Sửa hồ sơ…' });
+    const r = await popup(items, null, { x, y });
+    if (r === 'new') api.tabAction('newSameProfile', list[list.length - 1].id);
+    if (r === 'toggle') api.tabAction('toggleGroup', null, partition);
+    if (r === 'close') api.tabAction('closeGroup', null, partition);
+    if (r === 'edit') openProfileForm(p);
+  }
+
   function renderTabs() {
     const container = $('#tabs');
     const plus = $('#btn-new-tab');
-    if (container.lastElementChild !== plus) container.append(plus);
-    const seen = new Set();
-    S.tabs.forEach((t, i) => {
+    const grouping = S.settings.groupTabs !== false;
+    const collapsed = new Set(S.collapsedGroups || []);
+    const counts = {};
+    S.tabs.forEach((t) => { counts[t.partition] = (counts[t.partition] || 0) + 1; });
+    const seq = [];
+    const seenTabs = new Set();
+    const seenGroups = new Set();
+    let prev = null;
+    for (const t of S.tabs) {
+      const grouped = grouping && counts[t.partition] >= 2;
+      if (grouped && t.partition !== prev) {
+        let chip = groupEls.get(t.partition);
+        if (!chip) { chip = createGroupEl(t.partition); groupEls.set(t.partition, chip); }
+        const p = profileOf(t);
+        const isCollapsed = collapsed.has(t.partition);
+        setPc(chip, p.color);
+        chip.classList.toggle('collapsed', isCollapsed);
+        chip.classList.toggle('has-active', S.tabs.some((x) => x.partition === t.partition && x.id === S.activeId));
+        if (chip.refs.name.textContent !== groupLabel(t)) chip.refs.name.textContent = groupLabel(t);
+        chip.refs.count.textContent = isCollapsed ? String(counts[t.partition]) : '';
+        chip.title = `Nhóm hồ sơ “${p.name}” – ${counts[t.partition]} tab\nBấm: ${isCollapsed ? 'mở rộng' : 'thu gọn'} · Kéo: di chuyển cả nhóm · Chuột phải: tùy chọn`;
+        seq.push(chip);
+        seenGroups.add(t.partition);
+      }
+      prev = t.partition;
       let node = tabEls.get(t.id);
       if (!node) {
         node = createTabEl(t.id);
         tabEls.set(t.id, node);
       }
-      updateTabEl(node, t);
-      if (!drag && container.children[i] !== node) container.insertBefore(node, container.children[i] || null);
-      seen.add(t.id);
-    });
+      updateTabEl(node, t, grouped, grouped && collapsed.has(t.partition));
+      seq.push(node);
+      seenTabs.add(t.id);
+    }
+    seq.push(plus);
+    if (!drag) {
+      seq.forEach((node, i) => {
+        if (container.children[i] !== node) container.insertBefore(node, container.children[i] || null);
+      });
+    }
     for (const [id, node] of tabEls) {
-      if (!seen.has(id)) {
-        node.remove();
-        tabEls.delete(id);
-      }
+      if (!seenTabs.has(id)) { node.remove(); tabEls.delete(id); }
+    }
+    for (const [p, node] of groupEls) {
+      if (!seenGroups.has(p)) { node.remove(); groupEls.delete(p); }
     }
   }
 
@@ -902,6 +1053,18 @@
     sec.hidden = !sk;
     const zoom = t && Math.abs((t.zoom || 1) - 1) > 0.001 ? `${Math.round(t.zoom * 100)}%` : '';
     $('#zoom-indicator').textContent = zoom;
+
+    const star = $('#btn-star');
+    const webPage = !!(t && /^https?:/i.test(url) && !t.error);
+    star.hidden = !webPage;
+    const marked = webPage && TM.findBookmarkByUrl && TM.findBookmarkByUrl(url);
+    const stk = marked ? 'starFill' : 'star';
+    if (star.dataset.k !== stk) { star.dataset.k = stk; star.innerHTML = ICONS[stk]; }
+    star.classList.toggle('on', !!marked);
+    star.title = marked ? 'Sửa dấu trang (Ctrl+D)' : 'Thêm vào dấu trang (Ctrl+D)';
+    const key = $('#btn-key');
+    key.hidden = !(t && S.activePwCount > 0);
+    key.title = `Mật khẩu đã lưu cho trang này (${S.activePwCount || 0}) – bấm để điền`;
   }
 
   // ------------------------------------------------------------------ các panel trong vùng nội dung
@@ -981,7 +1144,7 @@
         const grid = $('#empty-grid');
         grid.replaceChildren();
         if (!S.profiles.length) {
-          $('#empty-title').textContent = 'Chào mừng đến Muse Manager';
+          $('#empty-title').textContent = 'Chào mừng đến TabManagerSP';
           $('#empty-sub').textContent = 'Mỗi hồ sơ là một trình duyệt riêng với cookie và đăng nhập tách biệt. Tạo một hồ sơ cho từng tài khoản Muse AI, Gmail, Facebook… rồi mở chúng thành các tab trong cùng một cửa sổ.';
           $('#empty-create').textContent = 'Tạo hồ sơ đầu tiên';
           grid.hidden = true;
@@ -1044,6 +1207,7 @@
     renderPanels();
     renderFind();
     stateListeners.forEach((fn) => fn());
+    renderHooks.forEach((fn) => fn(S));
   }
 
   function sendBounds() {
@@ -1076,6 +1240,7 @@
       '#btn-new-tab': 'plus', '#btn-back': 'back', '#btn-forward': 'forward', '#btn-reload': 'reload', '#btn-home': 'home',
       '#btn-external': 'external', '#btn-menu': 'more', '#btn-add-profile': 'userPlus', '#btn-incognito': 'incognito',
       '#btn-manage': 'gear', '#find-prev': 'up', '#find-next': 'down', '#find-close': 'close',
+      '#btn-dashboard': 'dashboard', '#btn-star': 'star', '#btn-key': 'key', '#bm-more': 'chevrons',
     };
     for (const [sel, icon] of Object.entries(iconMap)) $(sel).innerHTML = ICONS[icon];
 
@@ -1146,6 +1311,7 @@
       if (cmd === 'new-tab-menu') openNewTabMenu();
       if (cmd === 'focus-address') { address.focus(); address.select(); }
       if (cmd === 'find') openFind();
+      if (cmd === 'bookmark-page' && TM.bookmarkPage) TM.bookmarkPage();
     });
     api.onDownload((d) => {
       if (d.state === 'progressing') showNotice(`Đang tải ${d.name}${d.percent !== null && d.percent !== undefined ? ` – ${d.percent}%` : '…'}`, null, 0);
@@ -1158,6 +1324,7 @@
   async function init() {
     document.body.classList.add(`platform-${api.platform}`);
     bindUi();
+    initHooks.forEach((fn) => fn());
     updateWindowControls();
     S = await api.getState();
     render();
@@ -1166,5 +1333,18 @@
     info = await api.appInfo();
   }
 
-  init();
+  // Không gian tên dùng chung cho các module giao diện khác (bookmarks.js, dashboard.js, passwords-ui.js).
+  window.TM = {
+    api, $, el, ICONS, PALETTE,
+    get S() { return S; },
+    get info() { return info; },
+    initials, fgFor, setPc, avatar, profileOf, activeTab, tabsOfProfile, hostOf, displayUrl, menuLabel, avatarPng,
+    popup, openModal, confirmDialog, showNotice, openManager, openProfileForm, pushOverlay, popOverlay,
+    onRender: (fn) => renderHooks.push(fn),
+    onInit: (fn) => initHooks.push(fn),
+    addManagerSection: (section) => extraSections.push(section),
+    rerender: () => render(),
+  };
+
+  document.addEventListener('DOMContentLoaded', init);
 })();

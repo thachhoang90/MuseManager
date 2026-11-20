@@ -29,6 +29,26 @@ contextBridge.exposeInMainWorld('api', {
   detectBrowsers: () => ipcRenderer.invoke('browsers:detect'),
   launchBrowser: (args) => ipcRenderer.invoke('browsers:launch', args),
 
+  bookmarks: {
+    add: (data) => ipcRenderer.invoke('bm:add', data),
+    update: (id, patch) => ipcRenderer.invoke('bm:update', id, patch),
+    remove: (id) => ipcRenderer.invoke('bm:remove', id),
+    move: (id, index) => ipcRenderer.invoke('bm:move', id, index),
+    importFrom: (args) => ipcRenderer.invoke('bm:import', args),
+  },
+
+  passwords: {
+    prompt: (args) => ipcRenderer.invoke('pm:prompt', args),
+    fillActive: (username) => ipcRenderer.invoke('pm:fill-active', { username }),
+    accountsActive: () => ipcRenderer.invoke('pm:accounts-active'),
+    summary: () => ipcRenderer.invoke('pm:summary'),
+    reveal: (id) => ipcRenderer.invoke('pm:reveal', id),
+    remove: (id) => ipcRenderer.invoke('pm:remove', id),
+    removeNever: (args) => ipcRenderer.invoke('pm:remove-never', args),
+    add: (args) => ipcRenderer.invoke('pm:add', args),
+    importCsv: (profileId) => ipcRenderer.invoke('pm:import-csv', { profileId }),
+  },
+
   openDataDir: () => ipcRenderer.send('app:open-data-dir'),
   openExternal: (url) => ipcRenderer.send('app:open-external', url),
   showItem: (p) => ipcRenderer.send('app:show-item', p),

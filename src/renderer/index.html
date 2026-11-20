@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https: http: data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
-  <title>Muse Manager</title>
+  <title>TabManagerSP</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header id="titlebar">
-    <div id="brand" title="Muse Manager"></div>
+    <div id="brand" title="TabManagerSP"></div>
     <div id="tabstrip">
       <div id="tabs" role="tablist">
         <button id="btn-new-tab" class="icon-btn small" title="Tab mới – chọn hồ sơ (Ctrl+T)"></button>
@@ -21,6 +21,7 @@
     <nav id="sidebar" aria-label="Hồ sơ">
       <div id="profile-rail"></div>
       <div class="rail-bottom">
+        <button id="btn-dashboard" class="rail-btn" title="Dashboard tài khoản (sơ đồ các hồ sơ)"></button>
         <button id="btn-add-profile" class="rail-btn" title="Tạo hồ sơ mới"></button>
         <button id="btn-incognito" class="rail-btn" title="Tab ẩn danh – không lưu đăng nhập (Ctrl+Shift+N)"></button>
         <button id="btn-manage" class="rail-btn" title="Quản lý hồ sơ &amp; cài đặt"></button>
@@ -38,11 +39,20 @@
           <span id="secure-icon"></span>
           <input id="address" type="text" spellcheck="false" autocomplete="off" placeholder="Tìm trên Google hoặc nhập địa chỉ web">
           <button id="zoom-indicator" title="Đặt lại thu phóng"></button>
+          <button id="btn-key" class="omni-btn" hidden></button>
+          <button id="btn-star" class="omni-btn" hidden></button>
         </div>
         <div id="notice" hidden></div>
         <button id="btn-external" class="icon-btn" title="Mở trang này bằng trình duyệt trên máy (Chrome, Edge, Cốc Cốc...)"></button>
         <button id="btn-menu" class="icon-btn" title="Menu"></button>
       </div>
+
+      <div id="bookmarkbar" hidden>
+        <div id="bm-items"></div>
+        <button id="bm-more" class="icon-btn small" title="Các dấu trang khác" hidden></button>
+      </div>
+
+      <div id="pwbar" hidden></div>
 
       <div id="findbar" hidden>
         <input id="find-input" type="text" spellcheck="false" placeholder="Tìm trong trang">
@@ -80,6 +90,8 @@
           </div>
         </section>
 
+        <section id="dashboard" hidden></section>
+
         <section id="empty-panel" class="panel" hidden>
           <div class="empty-inner">
             <div id="empty-logo"></div>
@@ -98,5 +110,8 @@
 
   <div id="modal-root"></div>
   <script src="app.js"></script>
+  <script src="bookmarks.js"></script>
+  <script src="passwords-ui.js"></script>
+  <script src="dashboard.js"></script>
 </body>
 </html>

@@ -1,10 +1,10 @@
 {
-  "name": "musemanager",
-  "productName": "Muse Manager",
-  "version": "1.0.0",
-  "description": "Trình duyệt đa hồ sơ: mỗi tab là một hồ sơ độc lập để đăng nhập nhiều tài khoản cùng lúc",
+  "name": "tabmanagersp",
+  "productName": "TabManagerSP",
+  "version": "2.1.1",
+  "description": "TabManagerSP – trình duyệt đa hồ sơ: mỗi tab là một hồ sơ độc lập để đăng nhập nhiều tài khoản cùng lúc",
   "main": "src/main/main.js",
-  "author": "MuseManager",
+  "author": "TabManagerSP",
   "license": "MIT",
   "private": true,
   "scripts": {
@@ -18,10 +18,10 @@
     "electron-builder": "26.18.0"
   },
   "build": {
-    "appId": "vn.musemanager.app",
-    "productName": "Muse Manager",
-    "executableName": "MuseManager",
-    "copyright": "MuseManager",
+    "appId": "vn.tabmanagersp.app",
+    "productName": "TabManagerSP",
+    "executableName": "TabManagerSP",
+    "copyright": "TabManagerSP",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -53,7 +53,7 @@
       "icon": "build/icon.ico"
     },
     "portable": {
-      "artifactName": "MuseManager-${version}-Portable.exe"
+      "artifactName": "TabManagerSP-${version}-Portable.exe"
     },
     "linux": {
       "target": [
@@ -69,6 +69,6 @@
       "icon": "build/icon.png",
       "category": "public.app-category.productivity"
     },
-    "artifactName": "MuseManager-${version}-${os}-${arch}.${ext}"
+    "artifactName": "TabManagerSP-${version}-${os}-${arch}.${ext}"
   }
 }

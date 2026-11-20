@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const {
-  app, BrowserWindow, ipcMain, nativeTheme, shell, Menu, screen,
+  app, BrowserWindow, ipcMain, nativeTheme, shell, Menu, screen, dialog,
 } = require('electron');
 const { resolveDataDir } = require('./paths');
 
@@ -10,12 +10,13 @@ const { resolveDataDir } = require('./paths');
 const DATA_DIR = resolveDataDir();
 app.setPath('userData', DATA_DIR);
 app.setPath('sessionData', DATA_DIR);
-if (process.platform === 'win32') app.setAppUserModelId('vn.musemanager.app');
+if (process.platform === 'win32') app.setAppUserModelId('vn.tabmanagersp.app');
 
 const { CHROME_UA } = require('./useragent');
 const { Store } = require('./store');
 const { TabManager } = require('./tabs');
-const { detectBrowsers, launchBrowser } = require('./browsers');
+const { detectBrowsers, launchBrowser, readBookmarks } = require('./browsers');
+const { PasswordStore, originOf } = require('./passwords');
 const { popupTemplate, pageContextMenu } = require('./menus');
 
 app.userAgentFallback = CHROME_UA;
@@ -30,6 +31,9 @@ const THEME = {
 let win = null;
 let store = null;
 let tabs = null;
+let passwords = null;
+let pwPrompt = null;               // lời nhắc "Lưu mật khẩu?" đang chờ
+const usernameHints = new Map();   // webContents.id -> { username, at } (đăng nhập nhiều bước)
 const downloadedFiles = new Set();
 
 if (!app.requestSingleInstanceLock()) {
@@ -89,12 +93,23 @@ function sendState() {
 }
 
 function fullState() {
+  const active = tabs.active;
+  const origin = active && !active.temp ? originOf(active.url) : null;
   return {
     ...tabs.serialize(),
     profiles: store.profiles,
     settings: store.settings,
+    bookmarks: store.bookmarks,
     closedCount: tabs.closedStack.length,
+    activePwCount: origin ? passwords.count(active.profileId, origin) : 0,
+    pwPrompt: pwPrompt && tabs.get(pwPrompt.tabId)
+      ? { id: pwPrompt.id, tabId: pwPrompt.tabId, host: hostOf(pwPrompt.origin), username: pwPrompt.username, type: pwPrompt.type }
+      : null,
   };
+}
+
+function hostOf(url) {
+  try { return new URL(url).host; } catch { return url; }
 }
 
 function uiCommand(cmd, arg) {
@@ -129,6 +144,12 @@ function handleShortcut(input) {
   if (ctrl && (key === '=' || key === '+')) { if (id) tabs.zoom(id, 1); return true; }
   if (ctrl && (key === '-' || key === '_')) { if (id) tabs.zoom(id, -1); return true; }
   if (ctrl && key === '0') { if (id) tabs.zoom(id, 0); return true; }
+  if (ctrl && !shift && k === 'd') { if (id) uiCommand('bookmark-page'); return true; }
+  if (ctrl && shift && k === 'b') {
+    store.updateSettings({ showBookmarks: !store.settings.showBookmarks });
+    sendState();
+    return true;
+  }
   if (ctrl && !shift && k === 'p') { if (active && active.view) active.view.webContents.print(); return true; }
   if (ctrl && shift && alt && k === 'i') { win.webContents.openDevTools({ mode: 'detach' }); return true; }
   if (key === 'F12' || (ctrl && shift && k === 'i')) { if (id) tabs.toggleDevTools(id); return true; }
@@ -143,7 +164,7 @@ function createWindow() {
     minWidth: 720,
     minHeight: 460,
     show: false,
-    title: 'Muse Manager',
+    title: 'TabManagerSP',
     icon: ICON,
     backgroundColor: nativeTheme.shouldUseDarkColors ? THEME.dark.bar : THEME.light.bar,
     titleBarStyle: 'hidden',
@@ -171,7 +192,7 @@ function createWindow() {
   tabs.on('changed', sendState);
   tabs.on('title', () => {
     const a = tabs.active;
-    win.setTitle(a && a.title ? `${a.title} — Muse Manager` : 'Muse Manager');
+    win.setTitle(a && a.title ? `${a.title} — TabManagerSP` : 'TabManagerSP');
   });
   tabs.on('download', (info) => {
     if (info.state === 'completed' && info.path) downloadedFiles.add(info.path);
@@ -293,6 +314,10 @@ function registerIpc() {
       case 'print': if (tab && tab.view) tab.view.webContents.print(); break;
       case 'move': tabs.move(id, Number(value)); break;
       case 'reopen': tabs.reopenClosed(); break;
+      case 'toggleGroup': tabs.toggleGroup(String(value)); break;
+      case 'closeGroup': tabs.closeGroup(String(value)); break;
+      case 'moveGroup': tabs.moveGroup(String(value && value.partition), Number(value && value.index)); break;
+      case 'openInProfile': if (value) tabs.openInProfile(value.profileId, value.url); break;
       case 'focus': if (tab && tab.view && !tab.showStart) tab.view.webContents.focus(); break;
       default: break;
     }
@@ -322,6 +347,7 @@ function registerIpc() {
     tabs.closeProfileTabs(id);
     try { await tabs.clearProfileData(id); } catch { /* bỏ qua */ }
     store.removeProfile(id);
+    passwords.removeProfile(id);
     const dir = path.join(partitionsDir(), id);
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* file còn khóa */ }
     if (fs.existsSync(dir) && !store.data.pendingDelete.includes(id)) store.data.pendingDelete.push(id);
@@ -332,9 +358,13 @@ function registerIpc() {
 
   ipcMain.handle('settings:update', fromUi((patch) => {
     const s = store.updateSettings(patch || {});
+    if (patch && patch.groupTabs) tabs.normalizeGroups();
     sendState();
     return s;
   }));
+
+  registerBookmarkIpc();
+  registerPasswordIpc();
 
   ipcMain.handle('browsers:detect', fromUi(() => detectBrowsers()));
   ipcMain.handle('browsers:launch', fromUi((args) => {
@@ -351,6 +381,149 @@ function registerIpc() {
   }));
   ipcMain.on('app:show-item', fromUi((p) => {
     if (downloadedFiles.has(p)) shell.showItemInFolder(p);
+  }));
+}
+
+// ------------------------------------------------------------------ dấu trang
+function registerBookmarkIpc() {
+  ipcMain.handle('bm:add', fromUi((data) => { const b = store.addBookmark(data || {}); sendState(); return b; }));
+  ipcMain.handle('bm:update', fromUi((id, patch) => { const b = store.updateBookmark(id, patch || {}); sendState(); return b; }));
+  ipcMain.handle('bm:remove', fromUi((id) => { const r = store.removeBookmark(id); sendState(); return r; }));
+  ipcMain.handle('bm:move', fromUi((id, index) => { store.moveBookmark(id, Number(index)); sendState(); }));
+  ipcMain.handle('bm:import', fromUi((args) => {
+    try {
+      const { items, label } = readBookmarks(args || {});
+      const count = store.importBookmarks(items, `Đã nhập từ ${label}`);
+      sendState();
+      return { count };
+    } catch (err) {
+      return { error: err.message };
+    }
+  }));
+}
+
+// ------------------------------------------------------------------ mật khẩu
+// Chỉ nhận yêu cầu từ khung chính của tab thuộc một hồ sơ (không áp dụng cho tab ẩn danh).
+// Nguồn gốc (origin) luôn lấy từ khung gửi tin, không tin dữ liệu do trang tự khai.
+function pageContext(event) {
+  const wc = event.sender;
+  const frame = event.senderFrame;
+  if (!frame || frame !== wc.mainFrame) return null;
+  const origin = originOf(frame.url);
+  if (!origin) return null;
+  const tab = tabs.ownerTab(wc);
+  if (!tab || tab.temp || !store.getProfile(tab.profileId)) return null;
+  return { wc, tab, profileId: tab.profileId, origin };
+}
+
+function usernameHint(wcId) {
+  const h = usernameHints.get(wcId);
+  return h && Date.now() - h.at < 10 * 60 * 1000 ? h.username : '';
+}
+
+function registerPasswordIpc() {
+  ipcMain.handle('pm:query', (event) => {
+    const ctx = pageContext(event);
+    if (!ctx) return null;
+    const hint = usernameHint(ctx.wc.id);
+    const list = passwords.list(ctx.profileId, ctx.origin);
+    const accounts = list.map((i) => ({ username: i.username }));
+    accounts.sort((a, b) => (b.username === hint) - (a.username === hint));
+    return { accounts, hint, autofill: !!store.settings.autofillPasswords };
+  });
+
+  ipcMain.handle('pm:get', (event, { username } = {}) => {
+    const ctx = pageContext(event);
+    if (!ctx) return null;
+    const item = passwords.find(ctx.profileId, ctx.origin, String(username || ''));
+    if (!item) return null;
+    passwords.touch(item);
+    return passwords.passwordOf(item);
+  });
+
+  ipcMain.on('pm:username', (event, { username } = {}) => {
+    const ctx = pageContext(event);
+    if (!ctx || !username) return;
+    usernameHints.set(ctx.wc.id, { username: String(username).slice(0, 200), at: Date.now() });
+  });
+
+  ipcMain.on('pm:submit', (event, data = {}) => {
+    const ctx = pageContext(event);
+    if (!ctx || !store.settings.offerSavePasswords) return;
+    const password = String(data.password || '');
+    let username = String(data.username || '').trim().slice(0, 200);
+    if (!password || password.length > 500) return;
+    if (!username) username = usernameHint(ctx.wc.id);
+    if (passwords.isNever(ctx.profileId, ctx.origin)) return;
+    const existing = passwords.find(ctx.profileId, ctx.origin, username);
+    if (existing && passwords.passwordOf(existing) === password) {
+      passwords.touch(existing);
+      return;
+    }
+    pwPrompt = {
+      id: `pp${Date.now()}`, tabId: ctx.tab.id, profileId: ctx.profileId, origin: ctx.origin, username, password, type: existing ? 'update' : 'save',
+    };
+    sendState();
+  });
+
+  ipcMain.handle('pm:prompt', fromUi(({ id, action, username } = {}) => {
+    if (!pwPrompt || pwPrompt.id !== id) return false;
+    const p = pwPrompt;
+    pwPrompt = null;
+    if (action === 'save') passwords.upsert(p.profileId, p.origin, String(username !== undefined ? username : p.username).trim(), p.password);
+    if (action === 'never') passwords.addNever(p.profileId, p.origin);
+    sendState();
+    return true;
+  }));
+
+  // Điền tài khoản đã lưu vào tab đang mở (từ biểu tượng chìa khóa trên thanh địa chỉ).
+  ipcMain.handle('pm:fill-active', fromUi(({ username } = {}) => {
+    const tab = tabs.active;
+    if (!tab || !tab.view || tab.temp) return false;
+    const wc = tab.view.webContents;
+    const origin = originOf(wc.mainFrame.url);
+    const item = origin && passwords.find(tab.profileId, origin, String(username || ''));
+    if (!item) return false;
+    const password = passwords.passwordOf(item);
+    if (password === null) return false;
+    passwords.touch(item);
+    wc.mainFrame.send('pm:fill', { username: item.username, password });
+    return true;
+  }));
+
+  ipcMain.handle('pm:accounts-active', fromUi(() => {
+    const tab = tabs.active;
+    if (!tab || tab.temp) return [];
+    const origin = originOf(tab.url);
+    return origin ? passwords.list(tab.profileId, origin).map((i) => i.username) : [];
+  }));
+
+  ipcMain.handle('pm:summary', fromUi(() => passwords.summary()));
+  ipcMain.handle('pm:reveal', fromUi((id) => passwords.reveal(id)));
+  ipcMain.handle('pm:remove', fromUi((id) => { const r = passwords.remove(id); sendState(); return r; }));
+  ipcMain.handle('pm:remove-never', fromUi(({ profileId, origin } = {}) => { passwords.removeNever(profileId, origin); return true; }));
+  ipcMain.handle('pm:add', fromUi(({ profileId, url, username, password } = {}) => {
+    const origin = originOf(url || '');
+    if (!origin || !store.getProfile(profileId) || !password) return { error: 'Thiếu địa chỉ trang, hồ sơ hoặc mật khẩu.' };
+    passwords.upsert(profileId, origin, String(username || '').trim(), String(password));
+    sendState();
+    return { ok: true };
+  }));
+  ipcMain.handle('pm:import-csv', fromUi(async ({ profileId } = {}) => {
+    if (!store.getProfile(profileId)) return { error: 'Chưa chọn hồ sơ.' };
+    const r = await dialog.showOpenDialog(win, {
+      title: 'Chọn file CSV mật khẩu xuất từ trình duyệt',
+      filters: [{ name: 'CSV', extensions: ['csv'] }],
+      properties: ['openFile'],
+    });
+    if (r.canceled || !r.filePaths[0]) return { canceled: true };
+    try {
+      const result = passwords.importCsv(profileId, fs.readFileSync(r.filePaths[0], 'utf8'));
+      sendState();
+      return result;
+    } catch (err) {
+      return { error: err.message };
+    }
   }));
 }
 
@@ -375,6 +548,7 @@ function setupAppMenu() {
 
 function start() {
   store = new Store(DATA_DIR);
+  passwords = new PasswordStore(DATA_DIR);
   purgePendingDeletes();
   nativeTheme.themeSource = 'system';
   setupAppMenu();
@@ -390,4 +564,5 @@ function start() {
 app.on('before-quit', () => {
   if (tabs) tabs.saveSession();
   if (store) store.saveNow();
+  if (passwords) passwords.saveNow();
 });

@@ -96,4 +96,27 @@ function launchBrowser({ browserId, profileDir, url }) {
   return true;
 }
 
-module.exports = { detectBrowsers, launchBrowser };
+// Đọc dấu trang (file "Bookmarks" dạng JSON, không mã hóa) của một profile trình duyệt.
+function readBookmarks({ browserId, profileDir }) {
+  const browser = detectBrowsers().find((b) => b.id === browserId);
+  if (!browser) throw new Error('Không tìm thấy trình duyệt trên máy');
+  if (!/^[\w .-]+$/.test(profileDir || '')) throw new Error('Profile không hợp lệ');
+  const file = path.join(browser.userData, profileDir, 'Bookmarks');
+  let json;
+  try {
+    json = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    throw new Error('Profile này chưa có dấu trang nào.');
+  }
+  const conv = (nodes) => (nodes || []).map((n) => (n.type === 'folder'
+    ? { type: 'folder', title: n.name, children: conv(n.children) }
+    : { type: 'url', title: n.name, url: n.url }));
+  const roots = json.roots || {};
+  const items = conv(roots.bookmark_bar && roots.bookmark_bar.children);
+  const other = conv(roots.other && roots.other.children);
+  if (other.length) items.push({ type: 'folder', title: 'Dấu trang khác', children: other });
+  const profile = browser.profiles.find((p) => p.dir === profileDir);
+  return { items, label: `${browser.name} – ${profile ? profile.name : profileDir}` };
+}
+
+module.exports = { detectBrowsers, launchBrowser, readBookmarks };
