@@ -1,0 +1,74 @@
+{
+  "name": "musemanager",
+  "productName": "Muse Manager",
+  "version": "1.0.0",
+  "description": "Trình duyệt đa hồ sơ: mỗi tab là một hồ sơ độc lập để đăng nhập nhiều tài khoản cùng lúc",
+  "main": "src/main/main.js",
+  "author": "MuseManager",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win --x64",
+    "dist:linux": "electron-builder --linux --x64",
+    "dist:mac": "electron-builder --mac"
+  },
+  "devDependencies": {
+    "electron": "44.10.1",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "vn.musemanager.app",
+    "productName": "Muse Manager",
+    "executableName": "MuseManager",
+    "copyright": "MuseManager",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "electronLanguages": [
+      "en-US",
+      "vi"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "portable": {
+      "artifactName": "MuseManager-${version}-Portable.exe"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "build/icon.png",
+      "category": "Network"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "build/icon.png",
+      "category": "public.app-category.productivity"
+    },
+    "artifactName": "MuseManager-${version}-${os}-${arch}.${ext}"
+  }
+}

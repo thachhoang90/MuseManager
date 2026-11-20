@@ -1,0 +1,45 @@
+name: Build Windows Portable
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Cài thư viện
+        run: npm ci
+
+      - name: Đóng gói bản portable (.exe 1 file + .zip)
+        run: npx electron-builder --win --x64 --publish never
+
+      - name: Tải lên artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MuseManager-Windows-Portable
+          path: |
+            dist/*.exe
+            dist/*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Tạo Release khi đẩy tag v*
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.exe
+            dist/*.zip

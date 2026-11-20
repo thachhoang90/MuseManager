@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https: http: data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>Muse Manager</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header id="titlebar">
+    <div id="brand" title="Muse Manager"></div>
+    <div id="tabstrip">
+      <div id="tabs" role="tablist">
+        <button id="btn-new-tab" class="icon-btn small" title="Tab mới – chọn hồ sơ (Ctrl+T)"></button>
+      </div>
+    </div>
+    <div id="wco-spacer"></div>
+  </header>
+
+  <div id="body">
+    <nav id="sidebar" aria-label="Hồ sơ">
+      <div id="profile-rail"></div>
+      <div class="rail-bottom">
+        <button id="btn-add-profile" class="rail-btn" title="Tạo hồ sơ mới"></button>
+        <button id="btn-incognito" class="rail-btn" title="Tab ẩn danh – không lưu đăng nhập (Ctrl+Shift+N)"></button>
+        <button id="btn-manage" class="rail-btn" title="Quản lý hồ sơ &amp; cài đặt"></button>
+      </div>
+    </nav>
+
+    <main id="main">
+      <div id="toolbar">
+        <button id="btn-back" class="icon-btn" title="Quay lại (Alt+←)"></button>
+        <button id="btn-forward" class="icon-btn" title="Tiến tới (Alt+→)"></button>
+        <button id="btn-reload" class="icon-btn" title="Tải lại (F5)"></button>
+        <button id="btn-home" class="icon-btn" title="Trang khởi động của hồ sơ (Alt+Home)"></button>
+        <div id="omnibox">
+          <button id="profile-pill" title="Hồ sơ của tab này"><span class="pill-dot"></span><span class="pill-name"></span></button>
+          <span id="secure-icon"></span>
+          <input id="address" type="text" spellcheck="false" autocomplete="off" placeholder="Tìm trên Google hoặc nhập địa chỉ web">
+          <button id="zoom-indicator" title="Đặt lại thu phóng"></button>
+        </div>
+        <div id="notice" hidden></div>
+        <button id="btn-external" class="icon-btn" title="Mở trang này bằng trình duyệt trên máy (Chrome, Edge, Cốc Cốc...)"></button>
+        <button id="btn-menu" class="icon-btn" title="Menu"></button>
+      </div>
+
+      <div id="findbar" hidden>
+        <input id="find-input" type="text" spellcheck="false" placeholder="Tìm trong trang">
+        <span id="find-count"></span>
+        <button id="find-prev" class="icon-btn small" title="Kết quả trước (Shift+Enter)"></button>
+        <button id="find-next" class="icon-btn small" title="Kết quả tiếp (Enter)"></button>
+        <button id="find-close" class="icon-btn small" title="Đóng (Esc)"></button>
+      </div>
+
+      <div id="content">
+        <div id="snapshot"></div>
+
+        <section id="start-panel" class="panel" hidden>
+          <div class="start-inner">
+            <div id="start-profile"></div>
+            <form id="start-form">
+              <input id="start-input" type="text" spellcheck="false" autocomplete="off" placeholder="Tìm trên Google hoặc nhập địa chỉ web">
+            </form>
+            <div id="quick-links"></div>
+            <p class="hint">Mẹo: đặt <b>Trang khởi động</b> cho hồ sơ (ví dụ trang Muse AI) để mỗi tab mới mở thẳng trang đó.</p>
+          </div>
+        </section>
+
+        <section id="error-panel" class="panel" hidden>
+          <div class="error-inner">
+            <div class="error-icon"></div>
+            <h2>Không mở được trang này</h2>
+            <p id="error-message"></p>
+            <p id="error-url" class="mono"></p>
+            <p id="error-code" class="muted mono"></p>
+            <div class="row">
+              <button id="error-retry" class="btn primary">Thử lại</button>
+              <button id="error-external" class="btn">Mở bằng trình duyệt mặc định</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="empty-panel" class="panel" hidden>
+          <div class="empty-inner">
+            <div id="empty-logo"></div>
+            <h1 id="empty-title">Chọn hồ sơ để mở</h1>
+            <p id="empty-sub" class="muted"></p>
+            <div id="empty-grid"></div>
+            <div class="row center">
+              <button id="empty-create" class="btn primary">Tạo hồ sơ mới</button>
+              <button id="empty-incognito" class="btn">Mở tab ẩn danh</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div id="modal-root"></div>
+  <script src="app.js"></script>
+</body>
+</html>
